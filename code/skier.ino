@@ -50,7 +50,7 @@
 #include "RTClib.h"
 
 //=============== objects ===============
-// create real time clock object to communicate with any OneWire device
+// create real time clock object
 RTC_DS3231 rtc;
 
 //=============== variables ===============
