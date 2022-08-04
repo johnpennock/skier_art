@@ -44,36 +44,6 @@
     0      1      1     REV
     0      1     PWM    Variable speed REV
 
-
-
-forwardHo(leftForwardBool, leftReverseBool, rightForwardBool, rightReverseBool, leftVelocity, rightVelocity); // invoke motor control routine
-
-int forwardHo(bool leftForwardBool, bool leftReverseBool, bool rightForwardBool, bool rightReverseBool, int leftVelocity, int rightVelocity) {
-
-  digitalWrite(leftForwardPin, leftForwardBool);
-  digitalWrite(leftReversePin, leftReverseBool);
-  digitalWrite(rightForwardPin, rightForwardBool);
-  digitalWrite(rightReversePin, rightReverseBool);
-
-  analogWrite(leftVelocityPin, leftVelocity); // left motor(s) velocity
-  analogWrite(rightVelocityPin, rightVelocity); // right motor(s) velocity
-
-}
-
-forward();
-
-void forward() {                            // go forward until we need to do something different
-  digitalWrite(leftForwardPin, HIGH);
-  digitalWrite(leftReversePin, LOW);
-  digitalWrite(rightForwardPin, HIGH);
-  digitalWrite(rightReversePin, LOW);
-
-  analogWrite(leftVelocityPin, travelVelocity);
-  analogWrite(rightVelocityPin, travelVelocity);
-}
-
-
-
 */
 
 //=============== libraries ===============
