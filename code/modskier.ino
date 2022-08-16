@@ -26,6 +26,9 @@
     Added 10K potentiometer to allow for testing of
     the 4 times of day without having to wait for 
     the respective times of day
+  
+  2022 Aug 16 - update
+    Added extend and retract modules to be called
 
       
   Pinout of DS3231 module:
@@ -75,7 +78,7 @@
   RTC_DS3231 rtc;
 
 //=============== variables ===============
-String versionDate = "20220812";
+String versionDate = "20220816";
 String sketchName = "modskier.ino";
 
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}; // days of week
@@ -88,6 +91,7 @@ int hourOfDay;                                   // hour of day from real time c
 int amPM = 0;                                    // flag to convert to 12 hour clock 
 int numberOfJumps = 0;                           // number of jumps to perform
 int potValue = 0;                                // value from potentiometer
+int ledState = LOW;                              // internal LED inittally off
 bool actionCompleted = false;                    // flag to enable action once
 
 bool extendState = LOW;                          // flag for actuator state LOW=retract HIGH=extend
@@ -96,9 +100,11 @@ long timeToExtend = 10000;                       // milliseconds to extend actua
 long timeToRetract = 10000;                      // milliseconds to retract actuator
 
 unsigned long prevJumpTime = 0;                  // start of jump power timer
+unsigned long previousMillis = 0;        // will store last time LED was updated
 
 //=============== constants ===============
 const long jumpOnTime = 10000;                   // time for actuator to run (in ms)
+const int ledPin =  LED_BUILTIN;                 // internal LED
 
 //=============== setup (run once after power on / reset) ===============
 void setup () {
@@ -131,6 +137,8 @@ void setup () {
   // January 21, 2014 at 3am you would call:
   // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
 
+
+  pinMode(ledPin, OUTPUT);                       // setup internal LED for troubleshooting
 //=============== potentiometer setup ===============
   pinMode(potOutPin, INPUT);                     // set pin as input
 
@@ -182,8 +190,12 @@ void loop() {
 } // end of main loop
 
 void readClock() {  // read the DS3231 RTC module
-// Print out Year/Month/Day, (Day of Week), and Time in 24 hour format
   DateTime now = rtc.now();                      // get date/time data from real time clock
+  tempC = (rtc.getTemperature());                // get temp from real time clock
+  minuteOfHour = (now.minute());
+  hourOfDay = (now.hour());
+
+// Print out Year/Month/Day, (Day of Week), and Time in 24 hour format
   Serial.print(now.year(), DEC);                 // year
   Serial.print('/');
   Serial.print(now.month(), DEC);                // month
@@ -203,7 +215,6 @@ void readClock() {  // read the DS3231 RTC module
   Serial.println();                              // blank line
 
 //print out the temperature both in C and F
-  tempC = (rtc.getTemperature());                // get temp from real time clock
   tempF = ((tempC * 1.8) + 32);                  // convert temp to F
   Serial.print("Temperature: ");
   Serial.print(tempC);                           // print out temp in C
@@ -213,12 +224,10 @@ void readClock() {  // read the DS3231 RTC module
   Serial.println();                              // blank line
 
 // print out the time of day in 12 hour format with leading zeros
-  minuteOfHour = (now.minute());
-  hourOfDay = (now.hour());
-    if (hourOfDay < 12) amPM = 0;                // flag to change 24 hour clock to 12 hour clock
-    if (hourOfDay >= 12) amPM = 1;               // flag to change 24 hour clock to 12 hour clock
-    if (hourOfDay > 12) hourOfDay = (hourOfDay - 12);  // if time is after noon, subtrack 12
-    if (hourOfDay <10) Serial.print("0");        // if hours less than 10 add leading zero
+  if (hourOfDay < 12) amPM = 0;                  // flag to change 24 hour clock to 12 hour clock
+  if (hourOfDay >= 12) amPM = 1;                 // flag to change 24 hour clock to 12 hour clock
+  if (hourOfDay > 12) hourOfDay = (hourOfDay - 12);  // if time is after noon, subtrack 12
+  if (hourOfDay <10) Serial.print("0");          // if hours less than 10 add leading zero
   Serial.print(hourOfDay);                       // print out hour of day in 12 hour format
   Serial.print(":");
     if (minuteOfHour < 10) Serial.print("0");    // if minutes less than 10 add leading zero
@@ -232,47 +241,47 @@ void readClock() {  // read the DS3231 RTC module
 void checkPotValue() {  // check for manual run of system
 
   potValue = analogRead(potOutPin);              // read the value from the potentiometer (0-1023)
-                                                 //   0 - 255  - do nothing
-                                                 // 256 - 511  - hour cycle
-                                                 // 512 - 767  - quarter after cycle
-                                                 // 767 - 1023 - quarter till cycle
+                                                 //   0 - 24   - do nothing
+                                                 //  25 - 250  - hour cycle
+                                                 // 251 - 500  - quarter after cycle
+                                                 // 501 - 750  - half hour cycle
+                                                 // 751 - 1023 - quarter till cycle
 
 // print out value from potentiometer
   Serial.print("Potentiometer value: ");
   Serial.print(potValue);
-  Serial.println();
 
   if(potValue < 24) {                            // check for no cycle
-    Serial.print("No manual jump...");
+    Serial.print("  so no manual jump...");
     Serial.println();
   }
   if(potValue > 24 && potValue < 250) {          // check for hour cycle
     numberOfJumps = hourOfDay;                   // set (hourOfDay) jump cycle(s)
     actionCompleted = true;                      // now that we've done this once, set flag saying so
-    Serial.print("Manual hour jump...");
+    Serial.print("  so a manual hour jump...");
     Serial.println();
   }
   if(potValue > 250 && potValue < 500) {         // check for quarter after cycle
     numberOfJumps = 1;                           // set 1 jump cycle(s)
     actionCompleted = true;                      // now that we've done this once, set flag saying so
-    Serial.print("Manual quarter after jump...");
+    Serial.print("  so a manual quarter after jump...");
     Serial.println();
   }
   if(potValue > 500 && potValue < 750) {         // check for half hour cycle
     numberOfJumps = 2;                           // set 2 jump cycle(s)
     actionCompleted = true;                      // now that we've done this once, set flag saying so
-    Serial.print("Manual half hour jump...");
+    Serial.print("  so a manual half hour jump...");
     Serial.println();
   }
   if(potValue > 750 && potValue < 1023) {        // check for quarter till cycle
     numberOfJumps = 3;                           // set 3 jump cycle(s)
     actionCompleted = true;                      // now that we've done this once, set flag saying so
-    Serial.print("Manual quarter till jump...");
+    Serial.print("  so a manual quarter till jump...");
     Serial.println();
   }
 }  // end of checkPotValue module
 
-void timeForAction() {  // check the time for our four action times
+void timeForAction() {  // check the time for our four actions
   numberOfJumps= 0;                              // clear number of jump cycle(s)
 
   switch (minuteOfHour) {
@@ -327,7 +336,7 @@ void timeForAction() {  // check the time for our four action times
       actionCompleted = true;                    // now that we've done this once, set flag saying so
     break;                                       // done with this case
 
-    default:
+    default:                                     // if not any of the above cases
       numberOfJumps= 0;                          // clear number of jump cycle(s)
       actionCompleted = false;                   // clear action completed flag
     break;
@@ -344,10 +353,7 @@ void moveActuator(int numberOfJumps) {           // number of times to cycle act
       Serial.print(" jump(s)");
       Serial.println();    
 
-      digitalWrite(enablePin,LOW);               // ensure driver is off when starting up
-      digitalWrite(reversePin,LOW);              // not reverse
-      digitalWrite(forwardPin,HIGH);             // set to forward
-      digitalWrite(enablePin,HIGH);              // start motor
+      extendIt();                                // extend the actuator
 
       for (int delayCount = 10; delayCount >= 1; delayCount--) {  // 10 second movement delay
         Serial.print("Extending:  ");
@@ -355,11 +361,8 @@ void moveActuator(int numberOfJumps) {           // number of times to cycle act
         Serial.println();
         delay(1000);                             // give it enough time to extend fully
       } 
-                            
-      digitalWrite(enablePin,LOW);               // ensure driver is off when starting up
-      digitalWrite(forwardPin,LOW);              // not forward
-      digitalWrite(reversePin,HIGH);             // set to reverse
-      digitalWrite(enablePin,HIGH);              // start motor
+
+      retractIt();                               // retract the actuator
 
       for (int delayCount = 10; delayCount >= 1; delayCount--) {  // 10 second movement delay
         Serial.print("Retracting: ");
@@ -369,5 +372,29 @@ void moveActuator(int numberOfJumps) {           // number of times to cycle act
       }
     }  
   }
-  if (actionCompleted == true) numberOfJumps = 0;// clear the number of jumps
+  if (actionCompleted == true) {
+    numberOfJumps = 0;                           // clear the number of jumps
+    digitalWrite(enablePin,LOW);                 // ensure motor driver is off
+    digitalWrite(forwardPin,LOW);                // not forward
+    digitalWrite(reversePin,LOW);                // not reverse
+}
+
 }  // end of moveActuator module
+
+void extendIt() {  // extend the actuator
+  digitalWrite(enablePin,LOW);                   // ensure driver is off when starting up
+  digitalWrite(reversePin,LOW);                  // not reverse
+  digitalWrite(forwardPin,HIGH);                 // set to forward
+  digitalWrite(enablePin,HIGH);                  // start motor
+  digitalWrite(ledPin, HIGH);                    // turn the LED on
+  Serial.print("Extending... ");
+}  // end of extend module
+
+void retractIt() {  // retract the actuator
+  digitalWrite(enablePin,LOW);                   // ensure driver is off when starting up
+  digitalWrite(forwardPin,LOW);                  // not forward
+  digitalWrite(reversePin,HIGH);                 // set to reverse
+  digitalWrite(enablePin,HIGH);                  // start motor
+  digitalWrite(ledPin, LOW);                     // turn the LED off
+  Serial.print("Retracting... ");
+}  // end of retract module
