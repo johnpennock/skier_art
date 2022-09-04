@@ -29,9 +29,21 @@
   
   2022 Aug 16 - update
     Added extend and retract modules to be called
+  
+  2022 Aug 26 - add 1602 LCD display
+    Added code to use 1602 LCD display instead of 
+    serial port.
+    1602 display is using i2c comms at address 0x27
+
+  2022 Aug 28 - update
+    Was able to get LCD display to work.
+    It now displays the current time and temp on line 1
+    and at the four time intervals, shows 
+    jumpCount of numberOfJumps
 
       
   Pinout of DS3231 module:
+    i2c address of module 0x68  
    +--------------------+
    | 1 - VCC +5         |
    | 2 - SCL    battery |
@@ -59,26 +71,31 @@
 */
 
 //=============== libraries ===============
-#include "RTClib.h"
+#include "RTClib.h"                              // real time clock
+#include <Wire.h>                                // one wire comms
+#include <LiquidCrystal_I2C.h>                   // LCD display
 
 //=============== definitions ===============
   //=============== serial port ===============
   #define baudRate 9600                          // serial port speed
 
   //=============== potentiometer ===============
-  #define potOutPin A0                          // center pin of potentiometer goes to A0
+  #define potOutPin A0                           // center pin of potentiometer goes to A0
 
   //=============== motor controller ===============
-  #define enablePin 3                           // pin 3 goes to pin 3 of controller (enable=1)
-  #define forwardPin 2                          // pin 2 goes to pin 5 of controller
-  #define reversePin 4                          // pin 4 goes to pin 7 of controller
+  #define enablePin 3                            // pin 3 goes to pin 3 of controller (enable=1)
+  #define forwardPin 2                           // pin 2 goes to pin 5 of controller
+  #define reversePin 4                           // pin 4 goes to pin 7 of controller
 
 //=============== objects ===============
   // create real time clock object
   RTC_DS3231 rtc;
 
+  // create LCD object
+  LiquidCrystal_I2C lcDisplay(0x27, 16,2);       // Set the LCD I2C address and size
+
 //=============== variables ===============
-String versionDate = "20220816";
+String versionDate = "20220828";
 String sketchName = "modskier.ino";
 
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}; // days of week
@@ -112,6 +129,10 @@ void setup () {
 // setup serial port for testing
   Serial.begin(baudRate);  
 
+// setup LCD - 16 chars x 2 lines
+  lcDisplay.init();                              // initialize the display
+  lcDisplay.begin(16, 2);                        // set the display for 16 chars by 2 lines
+
 //  if can't find real time clock, loop
   if (! rtc.begin()) {  
     Serial.println("Couldn't find RTC");
@@ -121,10 +142,11 @@ void setup () {
 
 // if power lost, set the real time clock to a default
   if (rtc.lostPower()) {  
-    Serial.println("RTC lost power, let's set the time!");
+    Serial.println("RTC lost power, need to set the time!");
+    //Serial.println("RTC lost power, let's set the time!");
     // When time needs to be set on a new device, or after a power loss, the
     // following line sets the RTC to the date & time this sketch was compiled
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     // This line sets the RTC with an explicit date & time, for example to set
     // January 21, 2014 at 3am you would call:
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
@@ -139,6 +161,7 @@ void setup () {
 
 
   pinMode(ledPin, OUTPUT);                       // setup internal LED for troubleshooting
+
 //=============== potentiometer setup ===============
   pinMode(potOutPin, INPUT);                     // set pin as input
 
@@ -160,19 +183,30 @@ void setup () {
   digitalWrite(forwardPin,LOW);                  // not forward
   digitalWrite(reversePin,HIGH);                 // set to reverse
   digitalWrite(enablePin,HIGH);                  // start motor
-  Serial.print("Initial Retract");
-  Serial.println();
+//  Serial.print("Initial Retract");
+//  Serial.println();
 
   for (int delayCount = 10; delayCount >= 1; delayCount--) {
-    Serial.print("Retracting: ");
-    Serial.print(delayCount);
-    Serial.println();
+//    Serial.print("Retracting: ");
+//    Serial.print(delayCount);
+//    Serial.println();
     delay(1000);                                 // give it enough time to retract fully
   }  
 
   digitalWrite(enablePin,LOW);                   // ensure driver is off when starting up
   digitalWrite(forwardPin,LOW);                  // not forward
   digitalWrite(reversePin,LOW);                  // not reverse
+
+  for(int i = 0; i< 3; i++)                      // flash display 3 times at startup
+  {
+    lcDisplay.backlight();                       // backlight on...
+    delay(250);
+    lcDisplay.noBacklight();                     // backlight off...
+    delay(250);
+  }
+  lcDisplay.backlight();                         // finish with backlight on  
+  lcDisplay.clear();                             // clear the display
+  lcDisplay.home();                              // start at character 0 on line 0
 
 } // end of setup
 
@@ -196,23 +230,30 @@ void readClock() {  // read the DS3231 RTC module
   hourOfDay = (now.hour());
 
 // Print out Year/Month/Day, (Day of Week), and Time in 24 hour format
-  Serial.print(now.year(), DEC);                 // year
-  Serial.print('/');
-  Serial.print(now.month(), DEC);                // month
-  Serial.print('/');
-  Serial.print(now.day(), DEC);                  // day
-  Serial.print(" (");
-  Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);  // derive day of week
-  Serial.print(") ");
-    if (now.hour() < 10) Serial.print("0");      // add leading zero to hours less than 10
-  Serial.print(now.hour(), DEC);                 // hour (0-23 no leading 0 under 10)
-  Serial.print(':');
-    if (now.minute() < 10) Serial.print("0");    // add leading zero to minutes under 10
-  Serial.print(now.minute(), DEC);               // minute (0-59 no leading 0 under 10)
-  Serial.print(':');
-    if (now.second() < 10) Serial.print("0");    // add leading zero to seconds under 10 
-  Serial.print(now.second(), DEC);               // second 90-59 no leading 0 under 10)
-  Serial.println();                              // blank line
+  // Serial.print(now.year(), DEC);                 // year
+  // Serial.print('/');
+  // Serial.print(now.month(), DEC);                // month
+  // Serial.print('/');
+  // Serial.print(now.day(), DEC);                  // day
+  // Serial.print(" (");
+  // Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);  // derive day of week
+  // Serial.print(") ");
+  //   if (now.hour() < 10) Serial.print("0");      // add leading zero to hours less than 10
+  // Serial.print(now.hour(), DEC);                 // hour (0-23 no leading 0 under 10)
+  // Serial.print(':');
+  //   if (now.minute() < 10) Serial.print("0");    // add leading zero to minutes under 10
+  // Serial.print(now.minute(), DEC);               // minute (0-59 no leading 0 under 10)
+  // Serial.print(':');
+  //   if (now.second() < 10) Serial.print("0");    // add leading zero to seconds under 10 
+  // Serial.print(now.second(), DEC);               // second 90-59 no leading 0 under 10)
+  // Serial.println();                              // blank line
+
+  lcDisplay.setCursor(0,0);                      // column 0, line 0 
+    if (now.hour() < 10) lcDisplay.print("0");    // add leading zero to hours less than 10
+  lcDisplay.print(now.hour());                   // print out hour
+  lcDisplay.print(":");
+    if (now.minute() < 10) lcDisplay.print("0"); // add leading zero to minutes under 10
+  lcDisplay.print(now.minute());                 // print out minutes
 
 //print out the temperature both in C and F
   tempF = ((tempC * 1.8) + 32);                  // convert temp to F
@@ -222,6 +263,10 @@ void readClock() {  // read the DS3231 RTC module
   Serial.print(tempF);                           // print temp in F
   Serial.print(" F");
   Serial.println();                              // blank line
+
+  lcDisplay.print(" | ");
+  lcDisplay.print(tempF);
+  lcDisplay.print(" F");
 
 // print out the time of day in 12 hour format with leading zeros
   if (hourOfDay < 12) amPM = 0;                  // flag to change 24 hour clock to 12 hour clock
@@ -351,7 +396,13 @@ void moveActuator(int numberOfJumps) {           // number of times to cycle act
       Serial.print(" of ");
       Serial.print(numberOfJumps);      
       Serial.print(" jump(s)");
-      Serial.println();    
+      Serial.println();
+
+      lcDisplay.setCursor(0,1);                  // column 0, line 1     
+      lcDisplay.print("Jump ");
+      lcDisplay.print(jumpCount);
+      lcDisplay.print(" of ");
+      lcDisplay.print(numberOfJumps);
 
       extendIt();                                // extend the actuator
 
@@ -377,7 +428,11 @@ void moveActuator(int numberOfJumps) {           // number of times to cycle act
     digitalWrite(enablePin,LOW);                 // ensure motor driver is off
     digitalWrite(forwardPin,LOW);                // not forward
     digitalWrite(reversePin,LOW);                // not reverse
-}
+
+    lcDisplay.setCursor(0,1);                    // column 0, line 1     
+    lcDisplay.print("                ");         // clear bottom line of display
+    
+ }
 
 }  // end of moveActuator module
 
